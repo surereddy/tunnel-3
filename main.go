@@ -34,8 +34,6 @@ var (
 
 	white string
 	black string
-
-	pool int
 )
 
 func init() {
@@ -44,7 +42,6 @@ func init() {
 	flag.BoolVar(&runRemote, "remote", false, "run as remote server")
 	flag.StringVar(&white, "white", "", "white site list doesn't using tunnel proxy")
 	flag.StringVar(&black, "black", "", "black site list using tunnel proxy")
-	flag.IntVar(&pool, "pool", 8, "pool size, remote server using value > 0 to enable pooling")
 	flag.Parse()
 
 	if (runLocal && runRemote) || (!runLocal && !runRemote) {
@@ -152,13 +149,13 @@ func main() {
 		}
 
 		socks := newSocks(&cfg)
-		sig, err = server.RunMultipleLocal(socks, tunnels, list, pool)
+		sig, err = server.RunMultipleLocal(socks, tunnels, list)
 		if err != nil {
 			log.Fatal("create local proxies:", err)
 		}
 		log.Infof("%d servers running.\n", len(socks))
 	} else {
-		sig, err = server.RunMultipleRemote(tunnels, pool)
+		sig, err = server.RunMultipleRemote(tunnels)
 		if err != nil {
 			log.Fatal("create remote proxies failed:", err)
 		}

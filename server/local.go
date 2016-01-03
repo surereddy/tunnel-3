@@ -9,15 +9,10 @@ import (
 	"github.com/cosiner/ygo/log"
 )
 
-func RunMultipleLocal(socks, tunnels []proxy.Proxy, list *SiteList, poolSize int) (sig Signal, err error) {
+func RunMultipleLocal(socks, tunnels []proxy.Proxy, list *SiteList) (sig Signal, err error) {
 	sig = NewSignal()
-	var pool ConnPool
-
-	if poolSize > 0 {
-		pool = make(ConnPool, len(tunnels)*poolSize)
-	}
 	for _, sock := range socks {
-		err = RunLocal(sock, tunnels, sig, list, pool)
+		err = RunLocal(sock, tunnels, sig, list)
 		if err != nil {
 			break
 		}
@@ -37,11 +32,9 @@ type Local struct {
 
 	listener net.Listener
 	signal   Signal
-
-	pool ConnPool
 }
 
-func RunLocal(sock proxy.Proxy, tunnels []proxy.Proxy, signal Signal, list *SiteList, pool ConnPool) error {
+func RunLocal(sock proxy.Proxy, tunnels []proxy.Proxy, signal Signal, list *SiteList) error {
 	ln, err := net2.RetryListen("tcp", sock.Addr(), 5, 1000)
 	if err != nil {
 		return err
@@ -53,7 +46,6 @@ func RunLocal(sock proxy.Proxy, tunnels []proxy.Proxy, signal Signal, list *Site
 		tunnels:  tunnels,
 		listener: ln,
 		signal:   signal,
-		pool:     pool,
 	}
 
 	go local.serve()
@@ -101,21 +93,13 @@ func (l *Local) serveConn(conn net.Conn) {
 		return
 	}
 
-	var isTunnel bool
-	remote, isTunnel, err = l.dial(addr)
+	remote, _, err = l.dial(addr)
 	if err != nil {
 		return
 	}
 
-	if l.pool == nil {
-		go PipeCloseDst(conn, remote)
-		PipeCloseDst(remote, conn)
-	} else {
-		go Pipe(conn, remote, false, true, true)
-		if !Pipe(remote, conn, true, false, !isTunnel) {
-			l.pool.Put(remote)
-		}
-	}
+	go PipeCloseDst(conn, remote)
+	PipeCloseDst(remote, conn)
 	remote = nil
 	conn = nil
 }
@@ -138,12 +122,7 @@ func (l *Local) dial(addr proxy.Addr) (conn net.Conn, isTunnel bool, err error) 
 
 	// tunnel
 	tunnel := l.randTunnel()
-	if l.pool != nil {
-		conn = l.pool.Get()
-	}
-	if conn == nil {
-		conn, err = net.Dial("tcp", tunnel.Addr())
-	}
+	conn, err = net.Dial("tcp", tunnel.Addr())
 	if err == nil {
 		conn, err = tunnel.Client(conn, addr)
 		if err != nil {

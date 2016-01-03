@@ -15,9 +15,9 @@ type (
 	StreamCreator func(key, iv []byte, isEncrypt bool) (cipher.Stream, error)
 
 	CipherMeta struct {
-		keyLen    int
-		ivLen     int
-		new StreamCreator
+		keyLen int
+		ivLen  int
+		new    StreamCreator
 	}
 
 	Cipher struct {
@@ -51,9 +51,9 @@ func (cipherMethods) NewAESStream(key, iv []byte, isEncrypt bool) (cipher.Stream
 
 func NewCipherMeta(keyLen, ivLen int, newStream StreamCreator) *CipherMeta {
 	return &CipherMeta{
-		keyLen:    keyLen,
-		ivLen:     ivLen,
-		new: newStream,
+		keyLen: keyLen,
+		ivLen:  ivLen,
+		new:    newStream,
 	}
 }
 

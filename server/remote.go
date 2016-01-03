@@ -10,10 +10,10 @@ import (
 	"github.com/cosiner/ygo/log"
 )
 
-func RunMultipleRemote(tunnels []proxy.Proxy, pool int) (sig Signal, err error) {
+func RunMultipleRemote(tunnels []proxy.Proxy) (sig Signal, err error) {
 	sig = NewSignal()
 	for _, tunnel := range tunnels {
-		err = RunRemote(tunnel, sig, pool)
+		err = RunRemote(tunnel, sig)
 		if err != nil {
 			break
 		}
@@ -30,11 +30,9 @@ type Remote struct {
 
 	listener net.Listener
 	signal   Signal
-
-	pool bool
 }
 
-func RunRemote(tunnel proxy.Proxy, signal Signal, pool int) error {
+func RunRemote(tunnel proxy.Proxy, signal Signal) error {
 	ln, err := net2.RetryListen("tcp", tunnel.Addr(), 5, 1000)
 	if err != nil {
 		return err
@@ -44,7 +42,6 @@ func RunRemote(tunnel proxy.Proxy, signal Signal, pool int) error {
 		tunnel:   tunnel,
 		signal:   signal,
 		listener: ln,
-		pool:     pool > 0,
 	}
 	go r.serve()
 	return nil
@@ -81,7 +78,6 @@ func (r *Remote) serveConn(conn net.Conn) {
 		}
 	}()
 
-NEXT_REQ:
 	conn, addr, err = r.tunnel.Server(conn)
 	if err != nil {
 		if err != io.EOF && !isConnClosed(err) {
@@ -97,16 +93,9 @@ NEXT_REQ:
 		return
 	}
 
-	if !r.pool {
-		go PipeCloseDst(remote, conn)
-		PipeCloseDst(conn, remote)
-		conn = nil
-	} else {
-		go Pipe(remote, conn, false, true, true)
-		if !Pipe(conn, remote, true, false, false) {
-			goto NEXT_REQ
-		}
-	}
+	go PipeCloseDst(remote, conn)
+	PipeCloseDst(conn, remote)
+	conn = nil
 	remote = nil
 }
 
