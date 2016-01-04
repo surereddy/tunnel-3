@@ -1,14 +1,13 @@
 package main
 
 import (
-	"bufio"
 	"flag"
-	"io"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 
+	"github.com/cosiner/gohper/os2/file"
 	"github.com/cosiner/gohper/utils/encodeio"
 	"github.com/cosiner/tunnel/proxy"
 	"github.com/cosiner/tunnel/server"
@@ -80,46 +79,34 @@ func newTunnels(cfg *Config) []proxy.Proxy {
 	return tunnels
 }
 
-func newList(white, black string) (*server.SiteList, error) {
+func newList(white, black string) *server.SiteList {
 	var listFile string
 	if white != "" {
 		listFile = white
 	} else if black != "" {
 		listFile = black
 	} else {
-		return nil, nil
+		return nil
 	}
-
-	fd, err := os.Open(listFile)
-	if err != nil {
-		return nil, err
-	}
-	defer fd.Close()
-	br := bufio.NewReader(fd)
 
 	mode := server.LIST_WHITE
 	if black != "" {
 		mode = server.LIST_BLACK
 	}
 	list := server.NewList(mode)
-	for {
-		line, _, err := br.ReadLine()
+	err := file.Filter(listFile, func(_ int, line []byte) error {
 		if len(line) > 0 {
 			site := string(line)
 			if !strings.HasPrefix(site, "//") {
 				list.Add(site)
 			}
 		}
-
-		if err == nil {
-			continue
-		}
-		if err == io.EOF {
-			err = nil
-		}
-		break
+		return nil
+	})
+	if err != nil {
+		log.Fatal("parse list file failed:", err)
 	}
-	return list, err
+	return list
 }
 
 func waitOsSignal() os.Signal {
@@ -143,11 +130,7 @@ func main() {
 		tunnels = newTunnels(&cfg)
 	)
 	if runLocal {
-		list, err := newList(white, black)
-		if err != nil {
-			log.Fatal("parsing list file failed:", err)
-		}
-
+		list := newList(white, black)
 		socks := newSocks(&cfg)
 		sig, err = server.RunMultipleLocal(socks, tunnels, list)
 		if err != nil {
