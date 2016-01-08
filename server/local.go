@@ -4,6 +4,8 @@ import (
 	"math/rand"
 	"net"
 
+	"strings"
+
 	"github.com/cosiner/gohper/net2"
 	"github.com/cosiner/tunnel/proxy"
 	"github.com/cosiner/ygo/log"
@@ -108,11 +110,18 @@ func (l *Local) dial(addr proxy.Addr) (conn net.Conn, isTunnel bool, err error) 
 	log.Debug(addr.Type, string(addr.Host))
 	if l.list != nil {
 		isWhite := l.list.IsWhiteMode()
-		inList := l.list.Contains(string(addr.Host))
-		if (isWhite && inList) || (!isWhite && !inList) {
-			// direct
+
+		host := string(addr.Host)
+
+		direct := strings.HasSuffix(host, ".cn")
+		if !direct {
+			inList := l.list.Contains(host)
+			direct = (isWhite && inList) || (!isWhite && !inList)
+		}
+		if direct {
 			conn, err = net.Dial("tcp", addr.String())
 			if err == nil {
+				log.Debug("direct connected to", host)
 				return conn, false, nil
 			}
 
