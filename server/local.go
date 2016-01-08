@@ -4,17 +4,15 @@ import (
 	"math/rand"
 	"net"
 
-	"strings"
-
 	"github.com/cosiner/gohper/net2"
 	"github.com/cosiner/tunnel/proxy"
 	"github.com/cosiner/ygo/log"
 )
 
-func RunMultipleLocal(socks, tunnels []proxy.Proxy, list *SiteList) (sig Signal, err error) {
+func RunMultipleLocal(socks, tunnels []proxy.Proxy, directList, tunnelList, suffixList *SiteList) (sig Signal, err error) {
 	sig = NewSignal()
 	for _, sock := range socks {
-		err = RunLocal(sock, tunnels, sig, list)
+		err = RunLocal(sock, tunnels, sig, directList, tunnelList, suffixList)
 		if err != nil {
 			break
 		}
@@ -27,7 +25,7 @@ func RunMultipleLocal(socks, tunnels []proxy.Proxy, list *SiteList) (sig Signal,
 }
 
 type Local struct {
-	list *SiteList
+	directList, tunnelList, suffixList *SiteList
 
 	sock    proxy.Proxy
 	tunnels []proxy.Proxy
@@ -36,14 +34,17 @@ type Local struct {
 	signal   Signal
 }
 
-func RunLocal(sock proxy.Proxy, tunnels []proxy.Proxy, signal Signal, list *SiteList) error {
+func RunLocal(sock proxy.Proxy, tunnels []proxy.Proxy, signal Signal, directList, tunnelList, suffixList *SiteList) error {
 	ln, err := net2.RetryListen("tcp", sock.Addr(), 5, 1000)
 	if err != nil {
 		return err
 	}
 
 	local := &Local{
-		list:     list,
+		directList: directList,
+		tunnelList: tunnelList,
+		suffixList: suffixList,
+
 		sock:     sock,
 		tunnels:  tunnels,
 		listener: ln,
@@ -106,27 +107,35 @@ func (l *Local) serveConn(conn net.Conn) {
 	conn = nil
 }
 
+func (l *Local) isDirectConnect(host string) bool {
+	if l.suffixList != nil {
+		if l.suffixList.Contains(host) {
+			return true
+		}
+	}
+	if l.directList != nil {
+		if l.directList.Contains(host) {
+			return true
+		}
+	}
+	if l.tunnelList != nil {
+		if l.tunnelList.Contains(host) {
+			return false
+		}
+	}
+	return false
+}
+
 func (l *Local) dial(addr proxy.Addr) (conn net.Conn, isTunnel bool, err error) {
 	log.Debug(addr.Type, string(addr.Host))
-	if l.list != nil {
-		isWhite := l.list.IsWhiteMode()
-
-		host := string(addr.Host)
-
-		direct := strings.HasSuffix(host, ".cn")
-		if !direct {
-			inList := l.list.Contains(host)
-			direct = (isWhite && inList) || (!isWhite && !inList)
+	if host := string(addr.Host); l.isDirectConnect(host) {
+		conn, err = net.Dial("tcp", addr.String())
+		if err == nil {
+			log.Debug("direct connected to", host)
+			return conn, false, nil
 		}
-		if direct {
-			conn, err = net.Dial("tcp", addr.String())
-			if err == nil {
-				log.Debug("direct connected to", host)
-				return conn, false, nil
-			}
 
-			log.Error("direct connect to dst server failed, try tunnel:", err)
-		}
+		log.Error("direct connect to dst server failed, try tunnel:", err)
 	}
 
 	// tunnel

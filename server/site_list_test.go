@@ -7,7 +7,7 @@ import (
 )
 
 func TestSiteList(t *testing.T) {
-	list := SiteList{}
+	list := NewList(LIST_TUNNEL)
 
 	sites := []string{
 		"www.google.com",
@@ -35,5 +35,18 @@ func TestSiteList(t *testing.T) {
 	}
 	for _, site := range sites3 {
 		testing2.False(t, list.Contains(site))
+	}
+}
+
+func TestSuffixList(t *testing.T) {
+	list := NewList(LIST_DIRECT_SUFFIXES)
+	list.Add(".cn")
+
+	sites2 := []string{
+		"a.cn",
+		".cn",
+	}
+	for _, site := range sites2 {
+		testing2.True(t, list.Contains(site))
 	}
 }

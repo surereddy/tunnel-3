@@ -1,15 +1,23 @@
 {
+    // local socks5 proxy
     "socks": [
         {
             "addr": "127.0.0.1:7072",
             "userPass": {}
         }
     ],
+    // remote tunnel proxy
     "tunnels": [
         {
             "addr": "127.0.0.1:7070",
             "method": "rc4-128-md5",
             "key": "123456"
         }
-    ]
+    ],
+    // site suffixes connect directly
+    "directSuffixes": [".cn"],
+    // sites connect directly
+    "directSites":["baidu.com"],
+    // sites connect via tunnel(anyway if doesn't match direct rules, so it can be empty)
+    "tunnelSites":["google.com"]
 }

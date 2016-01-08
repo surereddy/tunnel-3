@@ -4,10 +4,8 @@ import (
 	"flag"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
-	"github.com/cosiner/gohper/os2/file"
 	"github.com/cosiner/gohper/utils/encodeio"
 	"github.com/cosiner/tunnel/proxy"
 	"github.com/cosiner/tunnel/server"
@@ -24,30 +22,25 @@ type Config struct {
 		Method string `json:"method"`
 		Key    string `json:"key"`
 	} `json:"tunnels"`
+	DirectSuffixes []string `json:"directSuffixes"`
+	DirectSites    []string `json:"directSites"`
+	TunnelSites    []string `json:"tunnelSites"`
 }
 
 var (
 	conf      string
 	runLocal  bool
 	runRemote bool
-
-	white string
-	black string
 )
 
 func init() {
 	flag.StringVar(&conf, "conf", "tunnel.json", "config file in json")
 	flag.BoolVar(&runLocal, "local", false, "run as local server")
 	flag.BoolVar(&runRemote, "remote", false, "run as remote server")
-	flag.StringVar(&white, "white", "", "white site list doesn't using tunnel proxy")
-	flag.StringVar(&black, "black", "", "black site list using tunnel proxy")
 	flag.Parse()
 
 	if (runLocal && runRemote) || (!runLocal && !runRemote) {
 		log.Fatal("running mode is ambiguous.")
-	}
-	if white != "" && black != "" {
-		log.Fatal("list mode is ambiguous.")
 	}
 }
 
@@ -79,35 +72,36 @@ func newTunnels(cfg *Config) []proxy.Proxy {
 	return tunnels
 }
 
-func newList(white, black string) *server.SiteList {
-	var listFile string
-	if white != "" {
-		listFile = white
-	} else if black != "" {
-		listFile = black
-	} else {
-		return nil
-	}
-
-	mode := server.LIST_WHITE
-	if black != "" {
-		mode = server.LIST_BLACK
-	}
-	list := server.NewList(mode)
-	err := file.Filter(listFile, func(_ int, line []byte) error {
-		if len(line) > 0 {
-			site := string(line)
-			if !strings.HasPrefix(site, "//") {
-				list.Add(site)
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		log.Fatal("parse list file failed:", err)
-	}
-	return list
-}
+//
+//func newList(white, black string) *server.SiteList {
+//	var listFile string
+//	if white != "" {
+//		listFile = white
+//	} else if black != "" {
+//		listFile = black
+//	} else {
+//		return nil
+//	}
+//
+//	mode := server.LIST_DIRECT
+//	if black != "" {
+//		mode = server.LIST_TUNNEL
+//	}
+//	list := server.NewList(mode)
+//	err := file.Filter(listFile, func(_ int, line []byte) error {
+//		if len(line) > 0 {
+//			site := string(line)
+//			if !strings.HasPrefix(site, "//") {
+//				list.Add(site)
+//			}
+//		}
+//		return nil
+//	})
+//	if err != nil {
+//		log.Fatal("parse list file failed:", err)
+//	}
+//	return list
+//}
 
 func waitOsSignal() os.Signal {
 	sigs := make(chan os.Signal, 1)
@@ -130,9 +124,12 @@ func main() {
 		tunnels = newTunnels(&cfg)
 	)
 	if runLocal {
-		list := newList(white, black)
+		directList := server.NewList(server.LIST_DIRECT, cfg.DirectSites...)
+		tunnelList := server.NewList(server.LIST_TUNNEL, cfg.TunnelSites...)
+		directSuffixSites := server.NewList(server.LIST_DIRECT_SUFFIXES, cfg.DirectSuffixes...)
+
 		socks := newSocks(&cfg)
-		sig, err = server.RunMultipleLocal(socks, tunnels, list)
+		sig, err = server.RunMultipleLocal(socks, tunnels, directList, tunnelList, directSuffixSites)
 		if err != nil {
 			log.Fatal("create local proxies:", err)
 		}

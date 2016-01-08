@@ -2,12 +2,12 @@ package server
 
 import (
 	"strings"
-	"sync"
 )
 
 const (
-	LIST_WHITE = iota + 1 // only sites in list doesn't using tunnel
-	LIST_BLACK            // only sites in list using tunnel
+	LIST_DIRECT          = iota + 1 // sites in list doesn't using tunnel
+	LIST_DIRECT_SUFFIXES            // site has these suffixes doesn't using tunnel
+	LIST_TUNNEL                     // sites in list using tunnel
 )
 
 type node struct {
@@ -17,18 +17,18 @@ type node struct {
 type SiteList struct {
 	mode int
 	root node
-
-	mu sync.RWMutex
 }
 
-func NewList(mode int) *SiteList {
-	if mode != LIST_WHITE && mode != LIST_BLACK {
+func NewList(mode int, sites ...string) *SiteList {
+	if mode != LIST_DIRECT && mode != LIST_TUNNEL && mode != LIST_DIRECT_SUFFIXES {
 		panic("invalid list mode")
 	}
 
-	return &SiteList{
+	list := &SiteList{
 		mode: mode,
 	}
+	list.Add(sites...)
+	return list
 }
 
 func (l *SiteList) excludeSubDomain(site string) string {
@@ -44,11 +44,29 @@ func (l *SiteList) excludeSubDomain(site string) string {
 }
 
 func (l *SiteList) Contains(site string) bool {
+	if l.mode == LIST_DIRECT_SUFFIXES {
+		return l.containsSuffix(site)
+	}
+
 	site = l.excludeSubDomain(site)
-	l.mu.RLock()
-	has := l.contains(site)
-	l.mu.RUnlock()
-	return has
+	return l.contains(site)
+}
+
+func (l *SiteList) containsSuffix(site string) bool {
+	curr := &l.root
+	for i := len(site) - 1; i >= 0; i-- {
+		b := site[i]
+
+		if curr.children == nil {
+			return true
+		}
+
+		curr = curr.children[b]
+		if curr == nil {
+			return false
+		}
+	}
+	return curr.children == nil
 }
 
 func (l *SiteList) contains(site string) bool {
@@ -68,31 +86,39 @@ func (l *SiteList) contains(site string) bool {
 }
 
 func (l *SiteList) Add(sites ...string) {
-	l.mu.Lock()
+	if l.mode == LIST_DIRECT_SUFFIXES {
+		for _, site := range sites {
+			l.addSuffix(site)
+		}
+	}
 	for _, site := range sites {
 		site = l.excludeSubDomain(site)
 		l.add(site)
 	}
-	l.mu.Unlock()
+}
+
+func (l *SiteList) addSuffix(suffix string) {
+	curr := &l.root
+	for i := len(suffix) - 1; i >= 0; i-- {
+		curr = l.addNode(curr, suffix[i])
+	}
 }
 
 func (l *SiteList) add(site string) {
 	curr := &l.root
 	for i := range site {
-		b := site[i]
-
-		if curr.children == nil {
-			curr.children = make(map[byte]*node)
-		}
-		child := curr.children[b]
-		if child == nil {
-			child = &node{}
-			curr.children[b] = child
-		}
-		curr = child
+		curr = l.addNode(curr, site[i])
 	}
 }
 
-func (l *SiteList) IsWhiteMode() bool {
-	return l.mode == LIST_WHITE
+func (l *SiteList) addNode(curr *node, b byte) *node {
+	if curr.children == nil {
+		curr.children = make(map[byte]*node)
+	}
+	child, has := curr.children[b]
+	if !has {
+		child = &node{}
+		curr.children[b] = child
+	}
+	return child
 }
