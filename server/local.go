@@ -6,7 +6,7 @@ import (
 
 	"github.com/cosiner/gohper/net2"
 	"github.com/cosiner/tunnel/proxy"
-	"github.com/cosiner/ygo/log"
+	log "github.com/cosiner/ygo/jsonlog"
 )
 
 func RunMultipleLocal(socks, tunnels []proxy.Proxy, directList, tunnelList, suffixList *SiteList) (sig Signal, err error) {
@@ -32,6 +32,8 @@ type Local struct {
 
 	listener net.Listener
 	signal   Signal
+
+	log *log.Logger
 }
 
 func RunLocal(sock proxy.Proxy, tunnels []proxy.Proxy, signal Signal, directList, tunnelList, suffixList *SiteList) error {
@@ -49,6 +51,7 @@ func RunLocal(sock proxy.Proxy, tunnels []proxy.Proxy, signal Signal, directList
 		tunnels:  tunnels,
 		listener: ln,
 		signal:   signal,
+		log:      log.Derive("Local", sock.Addr()),
 	}
 
 	go local.serve()
@@ -92,7 +95,7 @@ func (l *Local) serveConn(conn net.Conn) {
 
 	conn, addr, err = l.sock.Server(conn)
 	if err != nil {
-		log.Error("parse socks5 request failed:", err)
+		l.log.Warn(log.M{"msg": "parse socks5 request failed:", "err": err.Error()})
 		return
 	}
 
@@ -101,8 +104,8 @@ func (l *Local) serveConn(conn net.Conn) {
 		return
 	}
 
-	go PipeCloseDst(conn, remote)
-	PipeCloseDst(remote, conn)
+	go PipeCloseDst(conn, remote, l.log)
+	PipeCloseDst(remote, conn, l.log)
 	remote = nil
 	conn = nil
 }
@@ -127,15 +130,18 @@ func (l *Local) isDirectConnect(host string) bool {
 }
 
 func (l *Local) dial(addr proxy.Addr) (conn net.Conn, isTunnel bool, err error) {
-	log.Debug(addr.Type, string(addr.Host))
+	host := string(addr.Host)
+	l.log.Info(log.M{"addr_type": addr.Type, "host": host, "port": addr.Port})
 	if host := string(addr.Host); l.isDirectConnect(host) {
 		conn, err = net.Dial("tcp", addr.String())
 		if err == nil {
-			log.Debug("direct connected to", host)
+			if l.log.IsDebugEnable() {
+				l.log.Debug(log.M{"connect_mode": "direct", "host": host})
+			}
 			return conn, false, nil
 		}
 
-		log.Error("direct connect to dst server failed, try tunnel:", err)
+		l.log.Error(log.M{"msg": "direct connect failed, try tunnel.", "host": host, "err": err.Error()})
 	}
 
 	// tunnel
@@ -144,10 +150,10 @@ func (l *Local) dial(addr proxy.Addr) (conn net.Conn, isTunnel bool, err error) 
 	if err == nil {
 		conn, err = tunnel.Client(conn, addr)
 		if err != nil {
-			log.Error("request tunnel server failed:", err)
+			l.log.Error(log.M{"msg": "tunnel handshake failed", "addr": tunnel.Addr(), "err": err.Error()})
 		}
 	} else {
-		log.Error("dial tunnel server failed:", err)
+		l.log.Error(log.M{"msg": "connect tunnel server failed", "addr": tunnel.Addr(), "err": err.Error()})
 	}
 	return conn, true, err
 }

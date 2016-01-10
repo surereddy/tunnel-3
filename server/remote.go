@@ -1,13 +1,12 @@
 package server
 
 import (
-	"net"
-
 	"io"
+	"net"
 
 	"github.com/cosiner/gohper/net2"
 	"github.com/cosiner/tunnel/proxy"
-	"github.com/cosiner/ygo/log"
+	log "github.com/cosiner/ygo/jsonlog"
 )
 
 func RunMultipleRemote(tunnels []proxy.Proxy) (sig Signal, err error) {
@@ -30,6 +29,8 @@ type Remote struct {
 
 	listener net.Listener
 	signal   Signal
+
+	log *log.Logger
 }
 
 func RunRemote(tunnel proxy.Proxy, signal Signal) error {
@@ -42,6 +43,7 @@ func RunRemote(tunnel proxy.Proxy, signal Signal) error {
 		tunnel:   tunnel,
 		signal:   signal,
 		listener: ln,
+		log:      log.Derive("Remote", tunnel.Addr()),
 	}
 	go r.serve()
 	return nil
@@ -81,7 +83,7 @@ func (r *Remote) serveConn(conn net.Conn) {
 	conn, addr, err = r.tunnel.Server(conn)
 	if err != nil {
 		if err != io.EOF && !isConnClosed(err) {
-			log.Error("parse tunnel request failed:", err)
+			r.log.Error(log.M{"msg": "parse tunnel request failed", "err": err.Error(), "remote": conn.RemoteAddr().String()})
 		}
 		return
 	}
@@ -89,12 +91,12 @@ func (r *Remote) serveConn(conn net.Conn) {
 	addrStr := addr.String()
 	remote, err = net.Dial("tcp", addrStr)
 	if err != nil {
-		log.Errorf("connect to remote server %s failed: %s\n", addrStr, err.Error())
+		r.log.Error(log.M{"msg": "connect to dst server failed", "err": err.Error(), "addr": addrStr})
 		return
 	}
 
-	go PipeCloseDst(remote, conn)
-	PipeCloseDst(conn, remote)
+	go PipeCloseDst(remote, conn, r.log)
+	PipeCloseDst(conn, remote, r.log)
 	conn = nil
 	remote = nil
 }

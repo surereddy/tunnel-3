@@ -4,7 +4,7 @@ import (
 	"io"
 	"net"
 
-	"github.com/cosiner/ygo/log"
+	log "github.com/cosiner/ygo/jsonlog"
 )
 
 type buffer struct {
@@ -37,7 +37,7 @@ var bufferPool = buffer{
 	c:       make(chan []byte, 256),
 }
 
-func PipeCloseDst(dst, src net.Conn) {
+func PipeCloseDst(dst, src net.Conn, logger *log.Logger) {
 	buf := bufferPool.Get()
 	defer func() {
 		dst.Close()
@@ -47,7 +47,7 @@ func PipeCloseDst(dst, src net.Conn) {
 	_, err := io.CopyBuffer(dst, src, buf)
 	if err != nil {
 		if !isConnClosed(err) {
-			log.Error("pipe error:", err)
+			logger.Error(log.M{"msg": "pipe error", "err": err.Error()})
 		}
 	}
 }

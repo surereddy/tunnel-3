@@ -3,10 +3,9 @@ package proxy
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"net"
-
-	"github.com/cosiner/ygo/log"
 )
 
 type (
@@ -50,8 +49,7 @@ func (t *Tunnel) clientRequest(conn net.Conn, addr Addr) error {
 	switch addr.Type {
 	case ADDR_IPV4, ADDR_IPV6, ADDR_DOMAIN_NAME:
 	default:
-		log.Error("unsupported addr type:", addr.Type)
-		return ErrNoProxy
+		return fmt.Errorf("unsupported addr type: %d", addr.Type)
 	}
 	debugForward(conn, addr)
 	_, err := conn.Write(addr.ToRaw())
@@ -84,8 +82,7 @@ func (t *Tunnel) serverRequest(conn net.Conn) (a Addr, err error) {
 		addrIndex = 2
 		rawLen = addrIndex + int(rawAddr[1]) + 2
 	default:
-		log.Error("unsupported addr type", a.Type)
-		return a, ErrNoProxy
+		return a, fmt.Errorf("unsupported addr type: %d", a.Type)
 	}
 
 	_, err = io.ReadFull(conn, rawAddr[2:rawLen])

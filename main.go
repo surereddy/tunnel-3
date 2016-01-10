@@ -2,17 +2,23 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/cosiner/gohper/encoding"
 	"github.com/cosiner/gohper/utils/encodeio"
 	"github.com/cosiner/tunnel/proxy"
 	"github.com/cosiner/tunnel/server"
-	"github.com/cosiner/ygo/log"
+	log "github.com/cosiner/ygo/jsonlog"
 )
 
 type Config struct {
+	Log struct {
+		Debug bool   `json:"debug"`
+		File  string `json:"file"`
+	} `json:"log"`
 	Socks []struct {
 		Addr     string            `json:"addr"`
 		UserPass map[string]string `json:"userPass"`
@@ -28,9 +34,10 @@ type Config struct {
 }
 
 var (
-	conf      string
-	runLocal  bool
-	runRemote bool
+	conf       string
+	runLocal   bool
+	runRemote  bool
+	serverMode string
 )
 
 func init() {
@@ -41,6 +48,11 @@ func init() {
 
 	if (runLocal && runRemote) || (!runLocal && !runRemote) {
 		log.Fatal("running mode is ambiguous.")
+	}
+	if runLocal {
+		serverMode = "local"
+	} else {
+		serverMode = "remote"
 	}
 }
 
@@ -53,7 +65,7 @@ func newSocks(cfg *Config) []proxy.Proxy {
 		}
 		sock, err := proxy.NewSocks5(methods, proxy.NewUserPass(s.UserPass), s.Addr)
 		if err != nil {
-			log.Fatal("create local socks5 proxy failed", err)
+			log.Fatal(log.M{"msg": "create socks5 proxy failed", "err": err.Error()})
 		}
 		socks[i] = sock
 	}
@@ -65,7 +77,7 @@ func newTunnels(cfg *Config) []proxy.Proxy {
 	for i, t := range cfg.Tunnels {
 		tunnel, err := proxy.NewTunnel(t.Method, t.Key, t.Addr)
 		if err != nil {
-			log.Fatal("create local tunnel proxy failed", err)
+			log.Fatal(log.M{"msg": "create tunnel proxy failed", "err": err.Error()})
 		}
 		tunnels[i] = tunnel
 	}
@@ -109,14 +121,35 @@ func waitOsSignal() os.Signal {
 	return <-sigs
 }
 
+func initLog(fname string, debug bool) {
+	level := log.LEVEL_INFO
+	if debug {
+		level = log.LEVEL_DEBUG
+	}
+	if fname == "" {
+		fname = "tunnel." + serverMode + ".log"
+	}
+	w, err := log.NewSingleFileWriter(fname, 4096)
+	if err == nil {
+		log.DefaultLogger, err = log.New(encoding.JSON, "Tunnel."+serverMode, "Server", level, 16, log.NewConsoleWriter(), w)
+	}
+	if err != nil {
+		fmt.Println("init log failed:", err)
+		os.Exit(-1)
+	}
+}
+
 func main() {
 	var cfg Config
 	err := encodeio.ReadJSONWithComment(conf, &cfg)
 	if err != nil {
-		log.Fatal("parsing config file failed:", err)
+		fmt.Println("parsing config file failed:", err)
+		os.Exit(-1)
 	}
+	initLog(cfg.Log.File, cfg.Log.Debug)
+
 	if (runLocal && len(cfg.Socks) == 0) || len(cfg.Tunnels) == 0 {
-		log.Fatal("empty socks or tunnels")
+		log.Fatal(log.M{"msg": "empty socks or tunnels"})
 	}
 
 	var (
@@ -131,17 +164,18 @@ func main() {
 		socks := newSocks(&cfg)
 		sig, err = server.RunMultipleLocal(socks, tunnels, directList, tunnelList, directSuffixSites)
 		if err != nil {
-			log.Fatal("create local proxies:", err)
+			log.Fatal(log.M{"msg": "create local proxies failed", "err": err.Error()})
 		}
-		log.Infof("%d servers running.\n", len(socks))
+		log.Info(log.M{"msg": "servers running", "server_num": len(socks)})
 	} else {
 		sig, err = server.RunMultipleRemote(tunnels)
 		if err != nil {
-			log.Fatal("create remote proxies failed:", err)
+			log.Fatal(log.M{"msg": "create remote proxies failed", "err": err.Error()})
 		}
-		log.Infof("%d servers running.\n", len(tunnels))
+		log.Info(log.M{"msg": "servers running", "server_num": len(tunnels)})
 	}
 
 	waitOsSignal()
 	sig.Close()
+	log.Close()
 }
