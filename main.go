@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/cosiner/gohper/encoding"
+	"github.com/cosiner/gohper/terminal/color"
 	"github.com/cosiner/gohper/utils/encodeio"
 	"github.com/cosiner/tunnel/proxy"
 	"github.com/cosiner/tunnel/server"
@@ -131,7 +132,7 @@ func initLog(fname string, debug bool) {
 	}
 	w, err := log.NewSingleFileWriter(fname, 4096)
 	if err == nil {
-		log.DefaultLogger, err = log.New(encoding.JSON, "Tunnel."+serverMode, "Server", level, 16, log.NewConsoleWriter(), w)
+		log.DefaultLogger, err = log.New(encoding.JSON, "Tunnel."+serverMode, "Server", level, 16, log.NewConsoleWriter(color.IsTTY), w)
 	}
 	if err != nil {
 		fmt.Println("init log failed:", err)
