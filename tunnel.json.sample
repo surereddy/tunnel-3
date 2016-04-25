@@ -6,14 +6,14 @@
     // local socks5 proxy
     "socks": [
         {
-            "addr": "127.0.0.1:7072",
+            "addr": "127.0.0.1:7778",
             "userPass": {}
         }
     ],
     // remote tunnel proxy
     "tunnels": [
         {
-            "addr": "127.0.0.1:7070",
+            "addr": "127.0.0.1:7777",
             "method": "rc4-128-md5",
             "key": "123456"
         }
